@@ -57,8 +57,6 @@
      on, and if you don't decide it here you'll discover it as a crash in
      Milestone 5. -->
 
-## Tool Inventory
-
 ### `search_listings`
 - **What it does:** Searches the listings data for items matching a description and optionally filters by size and maximum price. Size matching is case-insensitive and matches complete size values/tokens rather than arbitrary substrings. For example, `M` matches `S/M`, but `L` does not match `XL`, and `S` does not match `US 9`.
 - **Inputs:** `description` (str), `size` (str | None), `max_price` (float | None)

@@ -28,7 +28,7 @@ tool calls and returns a fit card — in at least 4 of 5 tries.
 <!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
      "my search is a plain keyword match and some phrasings will miss" is a
      real answer. -->
-
+Chose 4/5 because keyword matching and model-generated outputs can vary, so requiring 5/5 would be stricter than necessary for this version.
 ---
 
 ## 2. An impossible query stops before the second tool
@@ -39,7 +39,7 @@ Given a query that matches no listings, the agent stops before calling
 **Why this target:**
 <!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
      about this path? -->
-
+If search_listings gives [], the loop should always stop. There’s no model judgment involved in deciding whether to continue.
 ---
 
 ## 3. Something about state
@@ -54,11 +54,11 @@ Given a query that matches no listings, the agent stops before calling
      compares session["selected_item"] against what actually reached
      suggest_outfit is the shape you're after. -->
 
-
+On 5 of 5 runs, the id stored in session["selected_item"] is the same id received by suggest_outfit.
 
 **Why this target:**
 
-
+I choose 5/5 here because state passing is deterministic code. If my session logic is correct, there’s not much reason for it to randomly fail.
 
 ---
 
@@ -75,11 +75,11 @@ Given a query that matches no listings, the agent stops before calling
      sentence? A card longer than a caption anyone would post? Any of those can
      be turned into a number. -->
 
-
+For at least 4 of 5 tries, the fit card mentions both the price and is at least 2 sentences long.
 
 **Why this target:**
 
-
+I chose 4 of 5 because create_fit_card uses a language model, so the wording and structure can vary between runs. However, the price and length are important enough that they should be correct most of the time.
 
 ---
 
@@ -92,11 +92,11 @@ Given a query that matches no listings, the agent stops before calling
      search respects a price ceiling — anything, as long as it names a number
      or an observable outcome. -->
 
-
+When a query includes a maximum price, every listing returned by search_listings has a price less than or equal to that maximum — 5 of 5 tries.
 
 **Why this target:**
 
-
+I chose 5 of 5 because the maximum price filter is handled directly by the search code and does not depend on model output. If a maximum price is provided, the agent should never return a listing that exceeds it.
 
 ---
 
