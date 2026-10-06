@@ -60,7 +60,7 @@
 ## Tool Inventory
 
 ### `search_listings`
-- **What it does:** Searches the listings data for items matching a description and optionally filters by size and maximum price.
+- **What it does:** Searches the listings data for items matching a description and optionally filters by size and maximum price. Size matching is case-insensitive and matches complete size values/tokens rather than arbitrary substrings. For example, `M` matches `S/M`, but `L` does not match `XL`, and `S` does not match `US 9`.
 - **Inputs:** `description` (str), `size` (str | None), `max_price` (float | None)
 - **Returns:** A list of matching listing dictionaries, ordered from best match to worst match. Each dictionary contains `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price`, `colors`, `brand`, and `platform`.
 - **When it has nothing:** Returns an empty list `[]` when no listings match.
@@ -91,7 +91,7 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, put a message in the session saying that no matching listings were found and stop. Otherwise, take the first result and continue to `suggest_outfit`.
 
 **Where it lives:** `agent.py::run_agent`
 
