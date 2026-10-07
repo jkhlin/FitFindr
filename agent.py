@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -48,6 +50,61 @@ def new_session(query: str, wardrobe: dict) -> dict:
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
+
+# Price: "under $30", "below 30", "$30 or less", or a bare "$30" — tried in
+# that order, so "under $30" isn't also caught by the bare-dollar pattern.
+_PRICE_PATTERNS = [
+    re.compile(r"under\s*\$?\s*(\d+(?:\.\d+)?)", re.I),
+    re.compile(r"below\s*\$?\s*(\d+(?:\.\d+)?)", re.I),
+    re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*or\s*(?:less|under)", re.I),
+    re.compile(r"\$\s*(\d+(?:\.\d+)?)", re.I),
+]
+
+# "size M", "size 8", "size XXS" — the word right after "size".
+_SIZE_PATTERN = re.compile(r"\bsize\s+([A-Za-z0-9./-]+)", re.I)
+
+# Filler words that are common in a typed query but would otherwise leak into
+# the keyword-overlap description and nudge the score of anything whose text
+# happens to contain them too.
+_STOPWORDS = {"a", "an", "the", "in", "for", "of", "to", "on", "at", "with", "looking"}
+
+
+def _parse_query(query: str) -> dict:
+    """
+    Pull a description, a size, and a max_price out of a plain-language query.
+
+    Regex, not the model — the price and size patterns above are specific
+    enough to get right deterministically, and there's no reason to spend an
+    API call parsing something a dozen characters of regex can do for free.
+
+    Three passes over the text, each one removing what it matched so the
+    later passes (and the final description) don't see it again:
+      1. a price ceiling,
+      2. a size,
+      3. whatever's left, with a short stopword list filtered out, becomes
+         the description handed to search_listings' keyword scoring.
+    """
+    working = query
+
+    max_price = None
+    for pattern in _PRICE_PATTERNS:
+        match = pattern.search(working)
+        if match:
+            max_price = float(match.group(1))
+            working = working[: match.start()] + working[match.end():]
+            break
+
+    size = None
+    match = _SIZE_PATTERN.search(working)
+    if match:
+        size = match.group(1)
+        working = working[: match.start()] + working[match.end():]
+
+    words = re.findall(r"[a-zA-Z0-9]+", working)
+    description = " ".join(w for w in words if w.lower() not in _STOPWORDS)
+
+    return {"description": description, "size": size, "max_price": max_price}
+
 
 def run_agent(query: str, wardrobe: dict) -> dict:
     """
@@ -106,9 +163,44 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         than a stack trace. The import is already at the top of this file.
     """
     session = new_session(query, wardrobe)
+    count = 0
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    count += 1
+    trace.check_iterations(count)
+    session["parsed"] = _parse_query(query)
+
+    count += 1
+    trace.check_iterations(count)
+    session["search_results"] = search_listings(
+        description=session["parsed"]["description"],
+        size=session["parsed"]["size"],
+        max_price=session["parsed"]["max_price"],
+    )
+
+    # ⚠️ THE BRANCH. Nothing found: say what to change and stop — do not call
+    # suggest_outfit with nothing to suggest an outfit for.
+    if not session["search_results"]:
+        session["error"] = (
+            "No listings matched. I read your query as looking for "
+            f"'{session['parsed']['description']}'"
+            + (f", size {session['parsed']['size']}" if session["parsed"]["size"] else "")
+            + (f", under ${session['parsed']['max_price']:.2f}" if session["parsed"]["max_price"] is not None else "")
+            + ". Try a broader description, a different size, or raising the price."
+        )
+        return session
+
+    count += 1
+    trace.check_iterations(count)
+    session["selected_item"] = session["search_results"][0]
+
+    count += 1
+    trace.check_iterations(count)
+    session["outfit_suggestion"] = suggest_outfit(session["selected_item"], session["wardrobe"])
+
+    count += 1
+    trace.check_iterations(count)
+    session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+
     return session
 
 
