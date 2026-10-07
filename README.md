@@ -39,9 +39,14 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
-
+A user types a plain-language thrifting request, like `vintage graphic tee
+under $30, size M`. FitFindr parses out a description, a size, and a price
+ceiling; searches the 40 mock listings for the best match; and, if it finds
+one, asks the model to suggest an outfit pairing that item with pieces from
+the user's own wardrobe and to write a short social-caption-style "fit card"
+for it. If nothing in the data matches the request, it stops and says what to
+change — a different size, a broader description, a higher price ceiling —
+instead of guessing an outfit for an item that doesn't exist.
 
 ---
 
@@ -93,9 +98,9 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex, in `agent.py::_parse_query`. Three passes over the query string, each removing what it matched before the next pass runs: a price-ceiling pattern (`under $30`, `below 30`, `$30 or less`, or a bare `$30`), then a `size X` pattern, then whatever's left — minus a short stopword list (`a`, `the`, `in`, `for`, ...) — becomes the `description` handed to `search_listings`.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` → `parsed` (the dict from `_parse_query`: description/size/max_price) → `search_results` (what `search_listings` returned) → `selected_item` (the first result) → `outfit_suggestion` → `fit_card`, in that order. Each tool reads its input back out of the session rather than receiving it as a value passed straight from the previous call.
 
 ---
 
@@ -109,25 +114,49 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Here are two quick ways to style that butterfly tee with what you already own:
+
+**1. 2000s Streetwear**
+Pair the baby tee with your **baggy straight-leg jeans** and **chunky white sneakers**. Throw on the **black cropped zip hoodie** over your shoulders and grab your **black crossbody bag** to lean into that throwback Y2K aesthetic.
+
+**2. Casual Contrast**
+Tuck the tee into your **wide-leg khaki trousers**, add the **brown leather belt**, and finish it off with your **chunky white sneakers**. It balances the fitted, girly top with relaxed, neutral bottoms.
+
+  Fit card: I literally squealed when I scored this Y2K baby tee on depop for just $18.00! The butterfly print is *so* 2000s, and it looks insanely good paired with baggy jeans or tucked into wide-leg khakis. Honestly living out my Lizzie McGuire dreams in this one. ✨🦋
+
+0 model calls this session, 2 served from cache
 ```
 
 **The three tools, tested one at a time**
 
 ```
 $ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
-
+[{'id': 'lst_002', 'title': 'Y2K Baby Tee — Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top — Black', 'description': 'Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette. Stretchy material, fits true to size.', 'category': 'tops', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], 'size': 'S/M', 'condition': 'excellent', 'price': 15.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_033', 'title': 'Vintage Band Tee — Faded Grey', 'description': 'Faded grey band-style tee with distressed graphic. Crew neck. Fits boxy. Well-loved but no holes or major damage.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'band tee', 'graphic tee', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 19.0, 'colors': ['grey', 'charcoal'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_011', 'title': 'Low-Rise Cargo Pants — Khaki', 'description': 'Y2K era low-rise cargo pants. Lots of pockets. Khaki color, slightly distressed at the hems. Great for layering with a long tee.', 'category': 'bottoms', 'style_tags': ['y2k', 'cargo', '2000s', 'streetwear'], 'size': 'W29', 'condition': 'fair', 'price': 27.0, 'colors': ['khaki', 'tan'], 'brand': None, 'platform': 'poshmark'}, {'id': 'lst_015', 'title': 'Vintage Graphic Hoodie — Faded Black', 'description': 'Faded black pullover hoodie with barely-visible vintage graphic on the chest. Cozy interior. Some pilling but adds to the worn-in look.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'graphic', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 26.0, 'colors': ['black', 'charcoal'], 'brand': None, 'platform': 'depop'}]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+Here are two easy ways to style those Vintage Levi's 501 Jeans using what's already in your closet:
 
+**Outfit 1: Casual Streetwear**
+*   **Top:** White ribbed tank top (tucked in)
+*   **Outerwear:** Vintage black denim jacket worn over top
+*   **Shoes:** Chunky white sneakers
+*   **Accessories:** Black crossbody bag
+
+**Outfit 2: Cozy & Relaxed**
+*   **Top:** Oversized grey crewneck sweatshirt
+*   **Shoes:** Black combat boots
+*   **Accessories:** Brown leather belt threaded through the jeans
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
-
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Honestly, the thrift gods were smiling on me when I stumbled on these vintage Levi's 501 jeans today. I'm picturing them slightly slouchy with crisp white sneakers and a beat-up leather jacket for that effortless 90s off-duty look. Grabbed them on depop for just $38.00 and I don't think I'll ever take them off!
 ```
 
 ---
@@ -143,15 +172,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to implement `suggest_outfit` in `tools.py`, following the docstring already there (format the wardrobe into the prompt, handle the empty-wardrobe case separately).
+- *What came back:* A working version, but the line that conditionally appended the item's brand used a nested f-string with an escaped quote inside the expression part — `f"{f', brand: {new_item[\"brand\"]}' if ... else ''}"`. That syntax is only legal from Python 3.12 onward.
+- *What I changed:* `test.py` in this repo pins `MIN_PYTHON = (3, 11)`, so that line would crash for anyone on 3.11. I had it rewritten as a separate `brand_part` variable built with a plain f-string instead, and confirmed `python -c "import ast; ast.parse(open('tools.py').read())"` parses cleanly.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to build `search_listings`'s size filter per the spec's own warning: a plain substring check (`size.lower() in listing["size"].lower()`) is wrong, because `"s" in "us 9"` and `"l" in "xl"` are both `True`.
+- *What came back:* An implementation that splits the listing's `size` field on non-alphanumeric characters (so `"XL (oversized)"` becomes `["XL", "oversized"]`) and matches the requested size against those tokens exactly, case-insensitively, instead of doing a substring check.
+- *What I changed:* I verified it directly rather than taking it on faith: `search_listings('sneakers', size='S')` against listings sized `"US 8"` and `"US 9"` returns `[]`, and `search_listings('tee', size='M')` correctly matches listings sized `"S/M"`. Both match what the docstring said should and shouldn't happen.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
