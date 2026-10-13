@@ -29,13 +29,21 @@ import config
 
 _lines: list[str] = []
 _step_number = 0
+_active = False
 
 
 def start_trace() -> None:
-    """Clear the trace. Call this at the start of each run."""
-    global _step_number
+    """
+    Clear the trace and turn recording on. Call this at the start of each run.
+
+    Until this has been called, step() does nothing — so the calls in
+    run_agent() stay silent on a plain `ask` and in serve.py, and only print
+    when something asked for a trace (`--trace`, run_eval.py).
+    """
+    global _step_number, _active
     _lines.clear()
     _step_number = 0
+    _active = True
 
 
 def step(name: str, inputs=None, returned=None, note: str = "") -> None:
@@ -50,6 +58,8 @@ def step(name: str, inputs=None, returned=None, note: str = "") -> None:
         note:     an optional word on why, e.g. "branch: empty, stopping".
     """
     global _step_number
+    if not _active:
+        return
     _step_number += 1
 
     line = f"[{_step_number}] {name}"

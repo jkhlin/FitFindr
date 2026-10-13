@@ -264,20 +264,106 @@ that produced it:
 **Happy path**
 
 ```
-
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: description='vintage graphic tee', size=None, max_price=30.0
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+[3] select_item
+      in:  10 search results
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      →    first result, id=lst_002
+[4] suggest_outfit
+      in:  item id=lst_002, wardrobe items=10
+      out: Here are two quick ways to style that butterfly tee with what you already own:  **1. 2000s Streetwear** Pair t…
+[5] create_fit_card
+      in:  outfit (562 chars), item id=lst_002
+      out: I literally squealed when I scored this Y2K baby tee on depop for just $18.00! The butterfly print is *so* 200…
 ```
 
 **Empty search**
 
 ```
-
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: description='designer ballgown', size='XXS', max_price=5.0
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping
 ```
+
+Five steps against two: the empty run stops at the branch and never reaches
+`suggest_outfit` or `create_fit_card`. Step 3 of the happy path records
+`id=lst_002` and step 4 receives `item id=lst_002` — the same id on both sides
+of the session, which is what criterion 3 checks.
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
 
+
+
+### Failure modes, triggered on purpose
+
+**1. Empty search** — `python app.py ask 'designer ballgown size XXS under $5'`
+
+```
+  No listings matched. I read your query as looking for 'designer ballgown', size XXS, under $5.00. Try a broader description, a different size, or raising the price.
+```
+
+Already handled by the branch in `agent.py::run_agent`. Stops with zero model
+calls and names the three things the user can change.
+
+**2. Empty wardrobe** — `python app.py ask 'denim jacket under $50' --empty-wardrobe`
+
+```
+  Outfit:   Since this is your first piece, let's build around it. Here are two ways to style that cropped Wrangler jacket:
+  **1. The 90s Streetwear Look** Pair the light wash with baggy black cargo pants or wide-leg carpenter denim. ...
+```
+
+Already handled by the empty-wardrobe branch in `tools.py::suggest_outfit`: it
+returned general styling advice, not a crash and not an empty string. (This
+answer came from the build cache, so it shows the output but not a fresh call.)
+
+**3. Model unavailable** — a corrupted `GEMINI_API_KEY`, then a query I hadn't asked before.
+
+Before the fix, `agent.py` had no handler, so `generate.ModelUnavailable`
+travelled out of `run_agent` and was only caught by the catch-all in
+`app.py::main`. The user saw a bare `ModelUnavailable: ...` line, the run
+returned no session, and the item the search had already found was lost.
+
+After the fix, `run_agent` catches it around the two model-backed tools
+(`suggest_outfit`, `create_fit_card`), keeps the session, and sets
+`session["error"]`:
+
+```
+$ python app.py ask 'oversized wool blazer under $60' --trace
+[1] parse_query
+      in:  oversized wool blazer under $60
+      out: description='oversized wool blazer', size=None, max_price=60.0
+[2] search_listings (via MCP)
+      in:  {'description': 'oversized wool blazer', 'size': None, 'max_price': 60.0}
+      out: 7 items: Oversized Flannel Shirt — Plaid Red/Black, Knit Cardigan — Chunky Brown, Oversized Crewneck Sweatshirt — Vintage Navy … +4 more
+[3] select_item
+      in:  7 search results
+      out: Oversized Flannel Shirt — Plaid Red/Black ($22.0, thredUp)
+      →    first result, id=lst_003
+[4] model unavailable
+      out: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.goo…
+      →    stopping
+
+  I found 'Oversized Flannel Shirt — Plaid Red/Black', but couldn't reach the model to style it. The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+I set the bad key as an environment variable for that one command rather than
+editing `.env` (`config.py` calls `load_dotenv` without `override`, so a variable
+already in the environment wins). Same failure, and the real key was never
+touched.
 
 
 ---

@@ -169,17 +169,35 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     count += 1
     trace.check_iterations(count)
     session["parsed"] = _parse_query(query)
+    # trace._short() would print a plain dict as just its keys, so the parsed
+    # values go in as a string.
+    trace.step(
+        "parse_query",
+        inputs=query,
+        returned=(
+            f"description={session['parsed']['description']!r}, "
+            f"size={session['parsed']['size']!r}, "
+            f"max_price={session['parsed']['max_price']!r}"
+        ),
+    )
 
     count += 1
     trace.check_iterations(count)
     # search_listings (via MCP) — moved in unit 4, Milestone 1. What comes
     # back is the same list of dicts the direct call used to return; only how
     # it's reached changed.
-    session["search_results"] = call_tool("search_listings", {
+    search_args = {
         "description": session["parsed"]["description"],
         "size": session["parsed"]["size"],
         "max_price": session["parsed"]["max_price"],
-    })
+    }
+    session["search_results"] = call_tool("search_listings", search_args)
+    trace.step(
+        "search_listings (via MCP)",
+        inputs=str(search_args),
+        returned=session["search_results"],
+        note="" if session["search_results"] else "branch: empty, stopping",
+    )
 
     # ⚠️ THE BRANCH. Nothing found: say what to change and stop — do not call
     # suggest_outfit with nothing to suggest an outfit for.
@@ -196,14 +214,47 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     count += 1
     trace.check_iterations(count)
     session["selected_item"] = session["search_results"][0]
+    trace.step(
+        "select_item",
+        inputs=f"{len(session['search_results'])} search results",
+        returned=session["selected_item"],
+        note=f"first result, id={session['selected_item']['id']}",
+    )
 
-    count += 1
-    trace.check_iterations(count)
-    session["outfit_suggestion"] = suggest_outfit(session["selected_item"], session["wardrobe"])
+    # suggest_outfit and create_fit_card are the two tools that call the model,
+    # so they're the two that can raise ModelUnavailable (bad key, no network).
+    # Whatever the session already holds — the selected item, and the outfit if
+    # the second call is the one that failed — stays in it.
+    try:
+        count += 1
+        trace.check_iterations(count)
+        session["outfit_suggestion"] = suggest_outfit(session["selected_item"], session["wardrobe"])
+        trace.step(
+            "suggest_outfit",
+            inputs=(
+                f"item id={session['selected_item']['id']}, "
+                f"wardrobe items={len(session['wardrobe'].get('items', []))}"
+            ),
+            returned=session["outfit_suggestion"],
+        )
 
-    count += 1
-    trace.check_iterations(count)
-    session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+        count += 1
+        trace.check_iterations(count)
+        session["fit_card"] = create_fit_card(session["outfit_suggestion"], session["selected_item"])
+        trace.step(
+            "create_fit_card",
+            inputs=f"outfit ({len(session['outfit_suggestion'])} chars), item id={session['selected_item']['id']}",
+            returned=session["fit_card"],
+        )
+    except ModelUnavailable as exc:
+        # The exception text already says what broke and what to do about it
+        # (see generate._explain), so it goes into the message as written.
+        session["error"] = (
+            f"I found '{session['selected_item']['title']}', but couldn't reach "
+            f"the model to style it. {exc}"
+        )
+        trace.step("model unavailable", returned=str(exc), note="stopping")
+        return session
 
     return session
 
