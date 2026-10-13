@@ -316,14 +316,77 @@ verdicts section.
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | A matching query completes all three tools and returns a fit card | 4 of 5 | **MET** (5/5) | 5 PASS tries against a target of 4. Every try ended with `error` unset and trace steps for both `suggest_outfit` and `create_fit_card`. |
+| 2 | An impossible query stops before `suggest_outfit` and names what to change | 5 of 5 | **MET** (5/5) | 5 of 5 tries stopped at trace step 2 with `branch: empty, stopping` and no `suggest_outfit` step. Each set `session["error"]` to the same message, which lists three things to change (description, size, price). |
+| 3 | The id in `session["selected_item"]` is the id `suggest_outfit` received | 5 of 5 | **MET** (5/5) | 5 of 5 on the trace comparison (`lst_007` at `select_item` and at `suggest_outfit`). That check is weaker than it looks, so I re-measured it directly — see below. 10 of 10 on the direct measurement. |
+| 4 | The fit card mentions the price and is at least 2 sentences | 4 of 5 | **MET** (5/5) | 5 of 5 cards contain `$18.00` and have 3 sentences (counted with a script over the saved log, then checked against the five cards pasted above). Target was 4. |
+| 5 | Every result from a price-capped query is at or under the cap | 5 of 5 | **MET** (5/5) | In 5 of 5 tries all 8 results were `<= 20.0`; the highest was exactly `20.0`. The unfiltered query includes prices up to $45, so the ceiling was doing real work. |
+
+**Criterion 3, measured directly.** In the run, "the id `suggest_outfit`
+received" was read from the trace line `suggest_outfit  in: item id=...`. But
+`agent.py::run_agent` builds that line from `session["selected_item"]["id"]` —
+the same expression that supplies the argument — so comparing it with the
+`select_item` line could not have failed. To check what the tool really
+receives, I replaced `suggest_outfit` and `create_fit_card` in the `agent`
+module with spies that record their `new_item["id"]` argument and return stub
+text (no model calls — this is a state criterion, and the model isn't involved
+in it), then ran the loop 5 times on each of two queries:
+
+```
+'denim jacket under $50'           try 1: session=lst_007 suggest_outfit got=lst_007 create_fit_card got=lst_007 -> PASS
+   ... tries 2-5 identical, all PASS
+'vintage graphic tee under $30'    try 1: session=lst_002 suggest_outfit got=lst_002 create_fit_card got=lst_002 -> PASS
+   ... tries 2-5 identical, all PASS
+```
+
+10 of 10. So the verdict stands, and now it rests on the argument the tool
+actually received.
 
 **Diagnoses**
 
+There is nothing to diagnose: I missed no criterion, so there is no failing step
+and no mechanism to name. None of the four places (a tool, the loop's branch, the
+session, the model's output) failed against these five criteria in these 25
+scored tries. That also means no pattern across misses, and I'm not going to
+invent one.
+
+What I can say honestly is that **my targets were low**, and that the run turned
+up things the criteria did not ask about:
+
+- **Criterion 4 is the one I'd tighten.** It tests whether the model obeyed an
+  instruction that is already written into the `create_fit_card` prompt ("Write 2
+  to 4 sentences. Mention the item, the price... each exactly once"). It passed
+  in 25 of 25 cards, so the 4-of-5 allowance went unused. The sentence floor
+  was never close to being tested either: every one of the 25 cards had exactly
+  3 sentences. A target the model cannot miss does not tell me anything.
+- **What the criterion doesn't see is sameness.** Across the 15 cards written for
+  the Y2K Baby Tee (criteria 1, 4 and 5 all landed on it), only 12 have distinct
+  first-four-word openings, 9 start with "Okay" or "Found", and 7 contain
+  "literally". At `TEMPERATURE` 0.9 the wording differs, but the voice does not.
+  This is the same kind of gap as the "five fit cards share no opening sentence"
+  example in the unit notes. A stricter criterion would score that directly,
+  e.g. *"across 5 runs on the same item, no two cards share their first four
+  words"* (today 3 of those 15 cards repeat an opening an earlier card already
+  used, so it could actually fail).
+- **Criterion 3's instrument was circular**, as described above. The criterion is
+  fine; my first way of measuring it was not.
+- **Criterion 2 is met by its wording, not by being as helpful as it could be.**
+  The message names three things to change, but not which one caused the miss.
+  For `designer ballgown size XXS under $5` the keywords alone match nothing, so
+  raising the price would not help, and the message does not say so. I scored
+  it a pass because the criterion asks for a message "naming what to change" and
+  it does. If I were tightening it, I would require the message to name the
+  constraint that actually emptied the results.
+- **Criterion 5 was tested on one query**, `vintage tee under $20`. It is a good
+  one (the ceiling removes listings and one result sits on the boundary), but it
+  is one query. The filter is a plain `<=` on `price`, so I would not expect a
+  surprise, but I have not tried a ceiling with a size filter alongside it.
+
+I have not edited any criterion in `criteria.md`. None of them was broken
+(each one could be measured and was), and tightening a target after a clean run
+is not a revision under the unit's rules. The tightened versions above are what I
+would write if I were setting these targets again, not something I'm claiming
+credit for.
 
 
 ---
