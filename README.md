@@ -517,24 +517,110 @@ touched.
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** One thing, in `tools.py::create_fit_card`. The prompt used to
+ask only for a "casual, enthusiastic" caption in the finder's voice. It now ends
+with a line `How to open: ...`, filled in per call with one of six openings
+chosen at random from a new list, `_FIT_CARD_OPENINGS` (start with the price;
+start with how you'd wear it; start with where you found it; start with a dry
+one-liner; start with one specific detail of the piece; start mid-thought like
+answering a friend). The openings use only what the tool already has (title, price,
+platform, outfit). I did not ban any words. The scenarios, the criteria, the other
+two tools, the model and `TEMPERATURE` (0.9) are unchanged.
 
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** Not a missed criterion — I missed none. It
+targets the sameness found in the Milestone 4 diagnosis: across the 15 cards
+written for the Y2K Baby Tee, 9 opened with "Okay" or "Found" and only 12 had
+distinct first-four-word openings. That is a **model-output** problem, and the
+cause I could see in the tool was the prompt: it asked for enthusiasm and gave the
+model nothing to vary, so it fell back on the same excited-friend voice.
+
+Before editing the code I fixed the measure I would judge it by: *the number of
+distinct first-four-word openings among the 15 cards written for the same item
+(the Y2K Baby Tee comes up in criteria 1, 4 and 5), baseline 12 of 15.* I also
+watched the things that could get worse: price present, at least 2 sentences,
+and whether the cards stayed true to the listing.
 
 ### Run Log — After
 
+`python run_eval.py --label after` — same 6 scenarios × 5 tries, cache off,
+`TEMPERATURE` 0.9. 50 model calls, no crashes. Full output:
+`results/run_2026-10-13_1621_after.md`. Scored by the same script as the
+before run.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools and returns a fit card | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before `suggest_outfit` and names what to change | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. `selected_item` id is the id `suggest_outfit` received | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card mentions the price and is at least 2 sentences | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Every result from a price-capped query is at or under the cap | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
+**Before and after, side by side.** The five criteria are identical (5/5 on every
+row, both runs), so the table above cannot show a difference. The difference is
+in the 15 Y2K Baby Tee cards:
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+| Measure (15 cards, same item) | Before | After |
+|---|---|---|
+| **Distinct first-four-word openings** (the measure I set) | **12 / 15** | **12 / 15** |
+| Cards starting "Okay" or "Found" | 9 | 0 |
+| Cards containing "literally" | 7 | 5 |
+| Cards containing "obsessed" | 7 | 9 |
+| Cards telling the "2 AM / doom-scrolling / rabbit hole" story | 0 | 7 |
+| Cards describing the tee with details the listing doesn't have | 0 | 2 |
+| Cards where the buyer says they listed it ("I just listed it") | 0 | 1 |
+| Price `$18.00` shown | 15 / 15 | 15 / 15 |
+| Platform named | 15 / 15 | 15 / 15 |
+| Average sentences | 3.0 | 3.1 |
+
+**Did it help, and how do I know:** **No.** On the measure I set in advance,
+distinct openings stayed at 12 of 15, and it did not break criterion 4 (price in
+every card, 3 sentences on average). What it did was swap one kind of sameness for
+another, and it made one thing worse.
+
+- **The openers I was worried about went away** — "Okay"/"Found" from 9 cards to
+  0 — but the cards didn't get more varied. Seven of the fifteen now tell the
+  same story ("doom-scrolling depop at 2 AM", "rabbit hole"), which none did
+  before, and "obsessed" went *up*, from 7 to 9. Three cards still share their
+  first four words ("Was literally just").
+- **It made the cards less true to the listing.** Two cards invent details of
+  the tee. The listing says colours white, pink and purple and a "butterfly
+  graphic"; card 2 gives it "neon blue glitter wings" and "tiny cap sleeves", and
+  card 8 a "baby blue pastel shade" with "iridescent rhinestone-dotted" print. One
+  card has the buyer say "I just listed it on depop". None of the before cards
+  did any of these. My reading of the mechanism: the opening *"start with one
+  specific detail of the piece itself"* asks the model for a detail the prompt
+  doesn't give it (the tool never sends the listing's description or colours), so
+  it makes one up. That is a flaw in the change I chose, not noise. It is a guess
+  about cause, though: I did not log which opening each card was given, so I can't
+  tie each card to its opening.
+- **How much to trust this.** It is one run of 15 cards per condition. 12 versus
+  12 is within noise and says "no improvement", not "no effect". The 9-to-0 and
+  0-to-7 shifts are large enough that I don't think they are noise, but the 0-to-2
+  for invented details is a small count and I'm reporting it as a signal, not a
+  rate.
+
+Cards from the after run (`results/run_2026-10-13_1621_after.md`), copied as
+written:
+
+```
+[card 2 of 15 - invents details: 'neon blue glitter wings', 'tiny cap sleeves']
+Neon blue glitter wings and the absolute *tiny*est cap sleeves—I finally caved and bought this Y2K baby tee on depop for $18.00 and I am so obsessed. I'm totally throwing it on with baggy jeans and my beat-up combat boots for that ultimate 2000s grunge vibe. Run, don't walk, to my closet once I style this baby!
+
+[card 8 of 15 - invents details: 'baby blue pastel', 'iridescent rhinestone-dotted']
+The baby blue pastel shade and iridescent rhinestone-dotted butterfly print on this little fitted tee are just peak year-2000 nostalgia. I manifested this exact top for weeks before finally scoring it on Depop for $18.00. Honestly, I'm already rotating it between baggy straight-leg jeans for full-on Y2K streetwear and wide-leg khakis for that effortless high-low contrast.
+
+[card 6 of 15 - buyer says 'I just listed it']
+Only $18.00 for this absolute gem of a butterfly baby tee! I just listed it on depop and I am seriously obsessed with the vintage 2000s energy it brings. Throw it on with baggy jeans and chunky sneakers for pure Y2K streetwear vibes, or edge it up with wide-leg trousers and combat boots. Grab it before I change my mind and keep it in my own closet!
+
+[card 4 of 15 - the 2 AM story]
+Was literally just doom-scrolling on depop at 2 AM when this butterfly print Y2K baby tee jumped out at me for only $18.00! It’s giving major 2000s mall rat energy, and I am so obsessed. Gonna throw it on with my baggy straight-leg jeans and chunky sneakers for the ultimate nostalgic fit.
+
+[card 13 of 15 - the 2 AM story, same first four words as card 4]
+Was literally just doom-scrolling depop at 2 AM when this absolute gem popped up on my screen. I couldn't believe my luck snagging this Y2K butterfly baby tee for just $18.00! It's giving major early 2000s pop star off-duty, and I am so ready to style it with baggy low-rise jeans and chunky kicks.
+
+[card 14 of 15 - the 2 AM story, same first four words as cards 4 and 13]
+Was literally just doom-scrolling on depop at 2 AM when this Y2K baby tee with the cutest butterfly print popped up, and I couldn't resist grabbing it for just $18.00! It's giving major early-2000s pop princess energy, especially when I throw it on with baggy jeans and a zip hoodie. Obsessed is an understatement!
+```
 
 
 

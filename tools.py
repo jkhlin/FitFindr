@@ -20,6 +20,7 @@ That last line is what your loop branches on. "Returns a list" earns nothing —
 the description has to say what is *in* the list.
 """
 
+import random
 import re
 
 import config
@@ -206,6 +207,19 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
 
+# One of these is handed to the model per call, as the way to start the caption.
+# They only use what create_fit_card already has (title, price, platform,
+# outfit), so none of them needs a field a listing might not have.
+_FIT_CARD_OPENINGS = [
+    "Start with how little you paid, then say what you got.",
+    "Start with how you'd wear it, and only then reveal where it came from.",
+    "Start with where you found it and how you ended up scrolling there.",
+    "Start with a dry, understated one-liner instead of excitement.",
+    "Start with one specific detail of the piece itself (the print, the colour, "
+    "the cut), not with a reaction to it.",
+    "Start mid-thought, as if answering a friend who just asked where you got it.",
+]
+
 def create_fit_card(outfit: str, new_item: dict) -> str:
     """
     Write a short caption someone would actually post about the find.
@@ -247,6 +261,10 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         )
 
     price_text = f"${new_item['price']:.2f}"
+    # Unit 4, Milestone 5. Told only to be "casual, enthusiastic", the model
+    # opened nearly every caption as the same excited friend ("Okay I am
+    # literally obsessed..."). Each call now gets a different way to open.
+    opening = random.choice(_FIT_CARD_OPENINGS)
     prompt = (
         f"Write a short social-media caption for a thrifted find, as if the "
         f"buyer is posting it themselves.\n\n"
@@ -256,7 +274,8 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"Outfit idea: {outfit}\n\n"
         f"Write 2 to 4 sentences. Mention the item, the price ({price_text}), "
         f"and the platform ({new_item['platform']}) each exactly once. Be "
-        f"specific about the vibe — don't write a generic product description."
+        f"specific about the vibe — don't write a generic product description.\n"
+        f"How to open: {opening}"
     )
     system = (
         "You write casual, enthusiastic thrift-flip captions for a shopping "
