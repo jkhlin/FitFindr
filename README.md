@@ -202,18 +202,97 @@ Honestly, the thrift gods were smiling on me when I stumbled on these vintage Le
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools and returns a fit card | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before `suggest_outfit` and names what to change | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. `selected_item` id is the id `suggest_outfit` received | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card mentions the price and is at least 2 sentences | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Every result from a price-capped query is at or under the cap | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+Run with `python run_eval.py --label before` — 6 scenarios × 5 tries, cache off,
+`TEMPERATURE` 0.9. Full output: `results/run_2026-10-13_1553_before.md`.
+
+**It was a real re-run, not cached answers.** The run reported 50 model calls and
+no cache hits (15,457 prompt + 6,056 output tokens), and the five fit cards for
+the same item differ from each other (see criterion 4 below) — they are five
+different answers.
+
+**How each try was scored** (against the criterion as written in `criteria.md`,
+read back out of the saved log rather than from the console summary):
+
+1. `session["error"]` is `None`, the trace has both `suggest_outfit` and `create_fit_card` steps, and a fit card came back.
+2. `session["error"]` is set, the trace stops at step 2, and the message names what to change. No `suggest_outfit` or `create_fit_card` step appears.
+3. The id in the trace's `select_item` step equals the id in the `suggest_outfit` step's input.
+4. The card contains the selected item's price (`$18.00`) and has at least 2 sentences.
+5. Every price in `session["search_results"]` is `<= parsed["max_price"]`. The query was chosen so the ceiling does something: without it, `vintage tee` returns ten listings from $12 to $45; with `under $20` it returns eight, the highest of them exactly $20.
+
+**Real output from one try per criterion**, from `results/run_2026-10-13_1553_before.md`:
+
+**Criterion 1** — try 1, `agent.py::run_agent` calling `tools.py::suggest_outfit` and `tools.py::create_fit_card`:
 
 ```
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: description='vintage graphic tee', size=None, max_price=30.0
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+[3] select_item
+      in:  10 search results
+      out: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+      →    first result, id=lst_002
+[4] suggest_outfit
+      in:  item id=lst_002, wardrobe items=10
+      out: Here are two quick ways to style that butterfly tee with what you already own:  **1. 2000s Streetwear** *   **…
+[5] create_fit_card
+      in:  outfit (648 chars), item id=lst_002
+      out: Found this absolute dream of a butterfly print baby tee scrolling on depop for just $18.00 and I am NEVER taki…
+```
+
+**Criterion 2** — try 1, `agent.py::run_agent`, the branch at the empty search result:
 
 ```
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: description='designer ballgown', size='XXS', max_price=5.0
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping
+
+session["error"]: No listings matched. I read your query as looking for 'designer ballgown', size XXS, under $5.00. Try a broader description, a different size, or raising the price.
+```
+
+**Criterion 3** — try 1, `agent.py::run_agent`, the two trace lines the check compares:
+
+```
+[3] select_item
+      in:  7 search results
+      out: Denim Jacket — Light Wash, Cropped ($42.0, poshmark)
+      →    first result, id=lst_007
+[4] suggest_outfit
+      in:  item id=lst_007, wardrobe items=10
+```
+
+**Criterion 4** — all five fit cards for the same item (`tools.py::create_fit_card`, Y2K Baby Tee, $18.00, depop):
+
+```
+1. Found this absolute dream of a butterfly print baby tee scrolling on depop for just $18.00 and I’m literally never taking it off! It’s giving major 2000s mall-rat energy, whether you throw it on with baggy dark-wash denim and chunky sneaks or dress it down with wide-leg khakis and stompy combat boots. Run, don't walk, to grab this before I change my mind and keep it for myself! 🦋✨
+2. Okay I am literally obsessed with this Y2K baby tee with the cutest little butterfly print I just snagged on depop for only $18.00! It’s giving major early 2000s pop star off-duty, and I can't wait to style it with baggy jeans and chunky sneakers or dress it down with some wide-leg khakis and combat boots. Grab it before I change my mind and keep it forever!! 🦋✨
+3. Absolute literal scream when I scored this Y2K butterfly baby tee on depop for just $18.00! It’s giving major early-2000s pop star energy, and I’m so obsessed I might actually cry. Honestly can't wait to balance out the tiny fit with some baggy jeans and chunky sneaks this weekend. ✨🦋
+4. Still screaming that I manifested this exact butterfly baby tee for just $18.00 on depop! It’s giving ultimate Y2K pop star off-duty, whether I'm leaning into baggy dark denim and chunky sneaks or dressing it down with wide-leg khakis and combat boots. Run, don't walk, to my shop before I change my mind and keep it forever!
+5. Okay but I am losing my mind over this literal Y2K butterfly baby tee I just hunted down for only $18.00! The nostalgia hits so hard, and I’m already planning to throw it on with baggy jeans and my beat-up sneakers for that ultimate off-duty look. Snagged this beauty on depop and honestly, I might never take it off.
+```
+
+**Criterion 5** — try 1 of `vintage tee under $20`, `tools.py::search_listings` (reached through `mcp_server.py`):
+
+```
+- parsed: {'description': 'vintage tee', 'size': None, 'max_price': 20.0}
+- search_result prices: [18.0, 19.0, 20.0, 12.0, 15.0, 16.0, 18.0, 14.0]
+```
+
+All five criteria were met on the first run, so there is no miss to diagnose yet.
+That is a fact about these criteria as much as about the agent — see the
+verdicts section.
 
 ---
 

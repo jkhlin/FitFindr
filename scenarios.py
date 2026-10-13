@@ -9,13 +9,15 @@ and this file is where you write it down.
 `run_eval.py` runs everything here five times and writes the run log — five
 because your criteria are written out of five.
 
-Three scenarios are filled in to show the shape. Add or change whatever your
-own criteria need — these are a starting point, not a fixed set.
+Every scenario below is run five times by run_eval.py, so "the same item more
+than once" (criterion 4) is just one scenario with a query that always picks
+the same listing.
 """
 
 SCENARIOS = [
     {
-        # A query the data can match. Criterion 1.
+        # A query the data can match. Criterion 1: all three tools run and a
+        # fit card comes back.
         "name": "matching query completes",
         "query": "vintage graphic tee under $30",
         "wardrobe": "example",
@@ -29,24 +31,42 @@ SCENARIOS = [
         "criterion": 2,
     },
     {
+        # Criterion 3 — state. Any normal query works; what's checked is that
+        # the id the loop selected (trace step "select_item") is the id that
+        # reached suggest_outfit (its trace input). A different item from
+        # criterion 4's, so the two aren't riding on the same listing.
+        "name": "selected item reaches suggest_outfit",
+        "query": "denim jacket under $50",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    {
+        # Criterion 4 — the fit card. The same query five times always selects
+        # the same listing (Y2K Baby Tee, $18.00), so any difference between
+        # tries is the model's wording and not a different input.
+        "name": "fit card mentions price, 2+ sentences",
+        "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # Criterion 5 — the price ceiling. Picked because the ceiling really
+        # does remove things: without it this query returns ten listings from
+        # $12 to $45, and one result sits exactly at $20, so it also tests
+        # that "under $20" is inclusive of $20.
+        "name": "price ceiling is respected",
+        "query": "vintage tee under $20",
+        "wardrobe": "example",
+        "criterion": 5,
+    },
+    {
         # A user with nothing saved. One of unit 4's three failure modes.
+        # Diagnostic — not one of the five.
         "name": "empty wardrobe",
         "query": "denim jacket under $50",
         "wardrobe": "empty",
         "criterion": None,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
 ]
 
 WARDROBES = ("example", "empty")
