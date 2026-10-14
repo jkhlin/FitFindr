@@ -182,6 +182,20 @@ Honestly, the thrift gods were smiling on me when I stumbled on these vintage Le
 - *What came back:* An implementation that splits the listing's `size` field on non-alphanumeric characters (so `"XL (oversized)"` becomes `["XL", "oversized"]`) and matches the requested size against those tokens exactly, case-insensitively, instead of doing a substring check.
 - *What I changed:* I verified it directly rather than taking it on faith: `search_listings('sneakers', size='S')` against listings sized `"US 8"` and `"US 9"` returns `[]`, and `search_listings('tee', size='M')` correctly matches listings sized `"S/M"`. Both match what the docstring said should and shouldn't happen.
 
+**Unit 4**
+
+**Moment 3**
+
+- *What I asked for:* I asked Claude Code to run my five criteria five times and score them against `criteria.md` as written.
+- *What came back:* 5/5 on criterion 3. When I read the verdict back, Claude pointed out that its own check couldn't have failed: it compared the trace line for `select_item` with the trace line for `suggest_outfit`, but `agent.py` builds both lines from `session["selected_item"]["id"]`, so it was comparing a value to itself.
+- *What I changed:* Claude replaced `suggest_outfit` and `create_fit_card` with spies that record the `id` they actually receive (model stubbed out, since state isn't a model question) and ran 10 loops: 10 of 10 matched. The verdict stayed MET, and the README now says the first check was circular and what replaced it.
+
+**Moment 4**
+
+- *What I asked for:* I asked Claude Code for one improvement, following my Milestone 4 diagnosis that the fit cards all sound alike (9 of 15 opened "Okay" or "Found"; 12 of 15 distinct openings).
+- *What came back:* A prompt change in `create_fit_card` that hands each call one of six random ways to open. Re-running the full test, my chosen measure didn't move (12 of 15 distinct before and after). The "Okay"/"Found" openers vanished, but 7 of 15 cards now tell the same "2 AM doom-scrolling" story, and 2 invent details the listing doesn't have ("neon blue glitter wings", "iridescent rhinestone-dotted" print).
+- *What I changed:* Nothing in the code yet. I reported it as a change that didn't help, with the cards pasted, rather than counting the vanished "Okay" openers as a win. The one-line diagnosis is in The Improvement and the follow-up is under What's Still Broken.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -443,11 +457,23 @@ Five steps against two: the empty run stops at the branch and never reaches
 `id=lst_002` and step 4 receives `item id=lst_002` — the same id on both sides
 of the session, which is what criterion 3 checks.
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:** `mcp_server.py` now registers `search_listings` as an MCP
+tool, with typed inputs (`description: str`, `size: str | None`,
+`max_price: float | None`) and a description that gives the units, says the price
+ceiling is inclusive, says how size is matched, and states the empty case ("returns
+an empty list, never an error"). It calls the real implementation in `tools.py`
+under an alias. In `agent.py::run_agent`, the direct call `search_listings(...)`
+was replaced by `call_tool("search_listings", {...})` from `mcp_client.py`; nothing
+else in the loop changed (commit `8be9813`). The trace labels the step
+`search_listings (via MCP)`.
 
+The return value did not change. I called the direct function and the MCP tool
+with the same arguments on four queries (`vintage graphic tee`/$30,
+`designer ballgown`/XXS/$5, `denim jacket`/$50, `tee`/size M) and the results were
+identical each time, and the no-match case still comes back as `[]`, so the branch
+in `run_agent` works unchanged. What did change is the cost: a search took about
+1 ms called directly and about 1.1–1.9 s through MCP, because `call_tool` starts
+the server as a new Python process for every call. Nothing broke.
 
 
 ### Failure modes, triggered on purpose
@@ -628,10 +654,54 @@ Was literally just doom-scrolling on depop at 2 AM when this Y2K baby tee with t
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+No criterion is missed: all five were met in both runs, 5 of 5 on every row. That
+doesn't mean nothing is left. These are what I'd still do, most important first.
 
+**1. The fit cards still sound alike, and my fix made them worse.** This is the
+criterion-4 gap, not a missed target. The Milestone 5 change (random openings in
+`tools.py::create_fit_card`) is still in `tools.py` as I write this. I count it as
+a regression: same 12 of 15 distinct openings, a new repeated "2 AM" story in 7 of
+15 cards, and 2 cards with invented details. What I'd do: drop the "start with one
+specific detail of the piece" opening, or pass the listing's description and
+colours into the prompt so there is a real detail to use; log which opening each
+card was given; re-measure on more than 15 cards; and write the sameness measure
+("no two cards on the same item share their first four words") as the criterion-4
+target. I stopped because the unit asks for one change, measured once, and this is
+the result of that one change.
+
+**2. The cards sometimes talk like the seller, not the buyer.** "Run, don't walk,
+to grab this before I change my mind and keep it" and "to my shop" appear in cards
+from both runs (before cards 1, 2 and 4 of the 15 tees; after cards 1, 3, 6 and 9),
+and one after-card says "I just listed it". The prompt says the buyer is posting,
+and the model doesn't always hold to it. No criterion covers it, so I haven't
+tried to fix it. I'd add a line to the prompt and a check for it.
+
+**3. A model call failing on the way is only handled for a bad key.**
+`run_agent` catches `ModelUnavailable` around `suggest_outfit` and
+`create_fit_card`, and I tested that with a corrupted key. I did not test losing
+the network mid-run or running out of quota, and `generate.py` turns those into
+different messages. `run_agent` also has no handler for `MCPError`: if
+`mcp_server.py` fails to start, the error would reach the user through the
+catch-all in `app.py::main` as a bare message, with no session. I'd add the same
+kind of handler around the `call_tool` line. I stopped because the milestone asked
+for the three failure modes and I handled the three.
+
+**4. Criterion 2's message names three things to change, not which one.** For
+`designer ballgown size XXS under $5`, raising the price wouldn't help, but the
+message doesn't say so. It meets the criterion as written. I'd re-run the search
+with each filter dropped in turn (no model call, so it's cheap) and name the one
+that brings results back. I stopped because the criterion was already met.
+
+**5. My targets were low, and the tests are thin in places.** All five were met on
+the first run. Criterion 4 never came close to its sentence floor (every card had
+exactly 3 sentences). Criterion 5 was tried on one query and never alongside a size
+filter. Criterion 3 now rests on a throwaway script that spies on the arguments,
+which is not in the repo; I'd turn it into a real test so it runs with the eval.
+
+**6. MCP costs about 1–2 s per search**, because every `call_tool` starts a new
+server process. For one unit that's the right trade (the starter says so), but
+it's the slowest step in a run that doesn't call the model. I'd keep a connection
+open if this were going anywhere.
 
 
 <!-- ═════════════════════════════════════════════════════════════════════
